@@ -27,10 +27,10 @@ jobs:
       matrix:
         include:
           - os: macos-14
-            command: npm run package:mac
+            command: npm run build && npx electron-builder --mac --publish never
             artifact: macos-arm64
           - os: windows-2022
-            command: npm run package:win
+            command: npm run build && npx electron-builder --win --publish never
             artifact: windows-x64
     runs-on: ${{ matrix.os }}
     needs: test
