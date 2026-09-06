@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="VoxCue：把你的声音变成自然、可靠的 ChatGPT 输入。" />
+    <title>VoxCue｜让声音成为你的快捷键</title>
+    <link rel="icon" href="brand-mark.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="motion.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="VoxCue 首页"><img src="brand-mark.svg" alt="" /><span>VoxCue</span></a>
+      <button class="menu-toggle" aria-label="打开菜单">☰</button>
+      <nav class="nav-links">
+        <a href="#features">功能</a><a href="#workflow">工作方式</a><a href="#privacy">隐私</a><a href="#download">下载</a>
+      </nav>
+      <a class="nav-cta" href="#download">立即下载 <span>↗</span></a>
+    </header>
+
+    <main id="top">
+      <section class="hero section-wrap">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="dot"></span>桌面端语音输入工具</p>
+          <h1>让声音，成为<br /><em>你的快捷键。</em></h1>
+          <p class="hero-lead">VoxCue 在本地完成听写、断句与声纹保护，安静地把你的话送进 ChatGPT。继续思考，继续工作，输入交给声音。</p>
+          <div class="hero-actions"><a class="button button-dark" data-primary-download href="#download">下载 VoxCue <span>↓</span></a><a class="text-link" href="#workflow">了解它如何工作 <span>→</span></a></div>
+          <p class="microcopy">macOS 与 Windows · 本地优先 · 无需订阅</p>
+        </div>
+        <div class="orb-stage" aria-label="VoxCue 悬浮球示意图"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orb"><img src="brand-mark.svg" alt="" /></div><div class="orb-label label-top">正在聆听 <span></span></div><div class="orb-label label-bottom">只识别你的声音</div></div>
+      </section>
+
+      <section class="signal-strip"><div class="section-wrap strip-inner"><span>本地语音识别</span><i></i><span>声纹保护</span><i></i><span>VAD 智能断句</span><i></i><span>ChatGPT CDP 连接</span></div></section>
+
+      <section id="features" class="section-wrap section"><div class="section-heading"><p class="eyebrow">为什么是 VoxCue</p><h2>少一点操作，<br />多一点专注。</h2></div><div class="feature-grid"><article><div class="feature-icon">◌</div><h3>说完即停</h3><p>VAD 自动识别你何时说完，断句间隔和停止词都可按你的节奏调整。</p></article><article><div class="feature-icon">⌁</div><h3>只听你的声音</h3><p>登记声纹后，陌生声音不会触发输入。语音样本和模型留在本机。</p></article><article><div class="feature-icon">↗</div><h3>自然进入 ChatGPT</h3><p>通过本地 CDP 连接，把转写结果写入并发送到 ChatGPT 桌面端。</p></article><article><div class="feature-icon">◎</div><h3>悬浮在整个屏幕</h3><p>轻量悬浮球随时可见，键盘、鼠标与语音输入可以同时进行。</p></article></div></section>
+
+      <section id="workflow" class="section section-tint"><div class="section-wrap workflow"><div class="section-heading"><p class="eyebrow">工作方式</p><h2>四步，完成一次<br />无感输入。</h2></div><div class="steps"><div><b>01</b><h3>按下快捷键</h3><p>在任何应用中唤起 VoxCue。</p></div><div><b>02</b><h3>自然地说</h3><p>VAD 与声纹在本地实时工作。</p></div><div><b>03</b><h3>自动整理</h3><p>断句、标点与敏感提示自动处理。</p></div><div><b>04</b><h3>发送到 ChatGPT</h3><p>一键写入，或按策略自动发送。</p></div></div></div></section>
+
+      <section id="privacy" class="section-wrap section privacy"><div class="privacy-card"><div><p class="eyebrow">Privacy by design</p><h2>你的声音，<br />只属于你的设备。</h2><p>VoxCue 使用本地模型完成识别与声纹比对。没有云端录音上传，没有隐藏的账号系统，诊断状态清晰可见。</p></div><div class="privacy-stamp">LOCAL<br /><span>FIRST</span></div></div></section>
+
+      <section id="download" class="section section-tint download-section"><div class="section-wrap"><div class="section-heading centered"><p class="eyebrow">开始使用</p><h2>下载 VoxCue</h2><p>选择你的系统，安装后即可用声音打开新的工作流。</p></div><div class="download-grid"><article class="download-card featured"><div class="platform">● <span>macOS</span></div><h3>VoxCue for Mac</h3><p>Apple Silicon 原生版本</p><a class="button button-dark" data-mac-download href="#download">下载 DMG <span>↓</span></a><small data-mac-note>安装包生成后将从此处下载</small></article><article class="download-card"><div class="platform windows">▣ <span>Windows</span></div><h3>VoxCue for Windows</h3><p>Windows 10 及以上</p><button class="button button-light" data-windows-download>获取 Windows 版本 <span>→</span></button><small>Windows 安装包正在准备中</small></article></div><p class="requirements">系统要求：macOS 12+ / Windows 10+ · 需要麦克风权限 · ChatGPT 桌面端连接功能需要开启 CDP</p></div></section>
+    </main>
+
+    <footer class="footer"><div class="section-wrap footer-inner"><a class="brand" href="#top"><img src="brand-mark.svg" alt="" /><span>VoxCue</span></a><span>让声音成为你的快捷键。</span><span>© 2026 VoxCue</span></div></footer>
+    <div class="toast" role="status" aria-live="polite"></div>
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,82 @@
+{
+  "name": "voice-input-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local voice input assistant for desktop ChatGPT",
+  "author": "VoxCue",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5187 --strictPort\" \"wait-on http://127.0.0.1:5187 && VITE_DEV_SERVER_URL=http://127.0.0.1:5187 electron .\"",
+    "build": "tsc -b && vite build",
+    "start": "electron .",
+    "test": "tsc -b --pretty false && node --test tests/*.test.cjs",
+    "package:dir": "npm run build && electron-builder --dir --config.directories.output=dist/unpacked",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:win": "npm run build && electron-builder --win",
+    "speech:sidecar": "node services/sherpa-sidecar/index.cjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "node-cpal": "^1.0.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "sherpa-onnx-node": "^1.13.7",
+    "typescript": "latest",
+    "vite": "latest",
+    "ws": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "concurrently": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "wait-on": "latest"
+  },
+  "build": {
+    "appId": "com.voiceinput.desktop",
+    "productName": "VoxCue",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "services/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "models",
+        "to": "models",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "icon": "assets/app-icon.icns",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "VoxCue 需要访问麦克风，用于本地语音识别和声纹验证。"
+      },
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "icon": "assets/app-icon.png",
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "VoxCue-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
