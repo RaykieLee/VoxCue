@@ -38,7 +38,7 @@ function createEngine() {
   const joiner = process.env.SHERPA_ASR_JOINER || ''
   const tokens = required('SHERPA_ASR_TOKENS')
   const vadModel = required('SHERPA_VAD_MODEL')
-  const endpointSeconds = Math.max(0.5, Math.min(3, Number(process.env.SHERPA_ENDPOINT_SECONDS) || 0.8))
+  const endpointSeconds = Math.max(0.5, Math.min(3, Number(process.env.SHERPA_ENDPOINT_SECONDS) || 1.2))
   const modelConfig = asrType === 'paraformer'
     ? { paraformer: { encoder, decoder }, tokens, numThreads: Number(process.env.SHERPA_THREADS || 2) }
     : { transducer: { encoder, decoder, joiner: required('SHERPA_ASR_JOINER') }, tokens, numThreads: Number(process.env.SHERPA_THREADS || 2) }
@@ -95,6 +95,14 @@ function cosineSimilarity(left, right) {
 function speakerScore(embedding) {
   if (!embedding || !enrollmentEmbeddings.length) return null
   return Math.max(...enrollmentEmbeddings.map((sample) => cosineSimilarity(embedding, sample)))
+}
+
+function resetEnrollmentCapture() {
+  enrollmentMode = false
+  enrollmentSamples = []
+  lastText = ''
+  utterance = []
+  recognizer?.reset(stream)
 }
 
 function emit(socket, type, data = {}) {
@@ -162,11 +170,21 @@ server.on('connection', socket => {
         }
         if (command.type === 'enroll_end') {
           const embedding = embeddingFromSamples(enrollmentSamples)
-          if (!speakerManager) emit(socket, 'enrollment_error', { message: '声纹模型未配置或加载失败' })
-          else if (!embedding) emit(socket, 'enrollment_error', { message: `有效声纹音频不足（收到 ${(enrollmentSamples.length / sampleRate).toFixed(1)} 秒）` })
+          if (!speakerManager) {
+            resetEnrollmentCapture()
+            emit(socket, 'enrollment_error', { message: '声纹模型未配置或加载失败' })
+          }
+          else if (!embedding) {
+            const duration = enrollmentSamples.length / sampleRate
+            resetEnrollmentCapture()
+            emit(socket, 'enrollment_error', { message: `有效声纹音频不足（收到 ${duration.toFixed(1)} 秒）` })
+          }
           else {
-            enrollmentEmbeddings.push(embedding); speakerManager.remove('user'); speakerManager.addMulti({ name: 'user', v: enrollmentEmbeddings }); speakerReady = true; enrollmentMode = false; enrollmentSamples = []; lastText = ''; utterance = []
-            recognizer.reset(stream)
+            enrollmentEmbeddings.push(embedding)
+            speakerManager.remove('user')
+            speakerManager.addMulti({ name: 'user', v: enrollmentEmbeddings })
+            speakerReady = true
+            resetEnrollmentCapture()
             if (process.env.SHERPA_SPEAKER_EMBEDDING) { fs.mkdirSync(path.dirname(process.env.SHERPA_SPEAKER_EMBEDDING), { recursive: true }); fs.writeFileSync(process.env.SHERPA_SPEAKER_EMBEDDING, JSON.stringify(enrollmentEmbeddings.map(vector => Array.from(vector)))) }
             emit(socket, 'enrolled')
           }
@@ -191,6 +209,6 @@ server.on('connection', socket => {
     stream.acceptWaveform({ samples, sampleRate })
     decode(socket)
   })
-  socket.on('close', () => { try { stream?.inputFinished() } catch {} })
+  socket.on('close', () => { resetEnrollmentCapture(); try { stream?.inputFinished() } catch {} })
 })
 server.on('error', error => { process.stderr.write(`${error.stack || error}\n`); process.exitCode = 1 })

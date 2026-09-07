@@ -23,6 +23,7 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) app.quit();
 let window;
 let orbWindow = null;
+let orbDragOrigin = null;
 let isQuitting = false;
 let shortcutRegistered = false;
 let shortcutAccelerator = "Alt+Space";
@@ -56,7 +57,7 @@ const defaultSettings = {
   onlyMyVoice: true,
   speakerThreshold: 0.55,
   modelLanguage: "中英双语",
-  endpointSeconds: 0.8,
+  endpointSeconds: 1.2,
   punctuation: true,
   writeToChatGPT: true,
   autoSend: false,
@@ -526,7 +527,7 @@ async function startSpeech(options = {}) {
         SHERPA_PUNCTUATION: options.punctuation === false ? "0" : "1",
         SHERPA_SPEAKER_THRESHOLD: String(options.speakerThreshold ?? 0.55),
         SHERPA_ENDPOINT_SECONDS: String(
-          Math.max(0.5, Math.min(3, Number(options.endpointSeconds) || 0.8)),
+          Math.max(0.5, Math.min(3, Number(options.endpointSeconds) || 1.2)),
         ),
         ...defaultModels,
         ...options.models,
@@ -881,6 +882,19 @@ ipcMain.on("orb:action", (_event, action) => {
   if (window && !window.isDestroyed())
     window.webContents.send("orb:action", action);
 });
+ipcMain.on("orb:drag-start", () => {
+  orbDragOrigin = orbWindow && !orbWindow.isDestroyed() ? orbWindow.getBounds() : null;
+});
+ipcMain.on("orb:move", (_event, { deltaX = 0, deltaY = 0 } = {}) => {
+  if (!orbDragOrigin || !orbWindow || orbWindow.isDestroyed()) return;
+  orbWindow.setPosition(
+    Math.round(orbDragOrigin.x + Number(deltaX)),
+    Math.round(orbDragOrigin.y + Number(deltaY)),
+  );
+});
+ipcMain.on("orb:drag-end", () => {
+  orbDragOrigin = null;
+});
 ipcMain.on("orb:state", (_event, state) => {
   if (orbWindow && !orbWindow.isDestroyed())
     orbWindow.webContents.send("orb:state", state);
@@ -920,7 +934,14 @@ ipcMain.handle("cdp:sessions-switch", (_event, { id, href }) =>
 ipcMain.handle("cdp:sessions-new", () => createCdpSession());
 ipcMain.handle("cdp:snapshot", () => snapshotCdpConversation());
 ipcMain.handle("shell:open-external", (_event, url) => shell.openExternal(url));
-ipcMain.handle("speech:start", (_event, options) => startSpeech(options));
+ipcMain.handle("speech:start", async (_event, options) => {
+  try {
+    return await startSpeech(options);
+  } catch (error) {
+    stopSpeech();
+    throw error;
+  }
+});
 ipcMain.handle("speech:push", (_event, samples) => {
   if (!speechSocket || speechSocket.readyState !== WebSocket.OPEN)
     return { sent: false };

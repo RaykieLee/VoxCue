@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import brandMarkUrl from "./assets/brand-mark.svg";
 import { canRouteSessionCommand, parseSessionCommand } from "./session-commands";
 
@@ -94,7 +94,7 @@ const defaults: Settings = {
   onlyMyVoice: true,
   speakerThreshold: 0.55,
   modelLanguage: "中英双语",
-  endpointSeconds: 0.8,
+  endpointSeconds: 1.2,
   punctuation: true,
   writeToChatGPT: true,
   autoSend: false,
@@ -199,17 +199,63 @@ function OrbApp() {
     listening?: boolean;
     rejected?: boolean;
   }>({});
+  const dragRef = useRef({ pointerId: -1, startX: 0, startY: 0, dragged: false });
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     document.body.classList.add("orb-body");
     return () => document.body.classList.remove("orb-body");
   }, []);
   useEffect(() => window.desktop?.orb.onState(setState), []);
+  useEffect(() => () => {
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+  }, []);
+  const onPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    dragRef.current = { pointerId: event.pointerId, startX: event.screenX, startY: event.screenY, dragged: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    window.desktop?.orb.dragStart();
+  };
+  const onPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (drag.pointerId !== event.pointerId) return;
+    const deltaX = event.screenX - drag.startX;
+    const deltaY = event.screenY - drag.startY;
+    if (!drag.dragged && Math.hypot(deltaX, deltaY) < 4) return;
+    drag.dragged = true;
+    window.desktop?.orb.move({ deltaX, deltaY });
+  };
+  const onPointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+    if (dragRef.current.pointerId !== event.pointerId) return;
+    window.desktop?.orb.dragEnd();
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    setTimeout(() => {
+      if (dragRef.current.pointerId === event.pointerId)
+        dragRef.current = { pointerId: -1, startX: 0, startY: 0, dragged: false };
+    }, 0);
+  };
+  const onClick = () => {
+    if (dragRef.current.dragged) return;
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = setTimeout(() => {
+      clickTimerRef.current = null;
+      window.desktop?.orb.action("toggle");
+    }, 240);
+  };
+  const onDoubleClick = () => {
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = null;
+    window.desktop?.orb.action("show-main");
+  };
   return (
     <div className="orb-page">
       <button
         className={`system-orb ${state.listening ? "listening" : ""} ${state.rejected ? "rejected" : ""}`}
-        onClick={() => window.desktop?.orb.action("toggle")}
-        onDoubleClick={() => window.desktop?.orb.action("show-main")}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
         aria-label={state.listening ? "停止听写" : "开始听写"}
       >
         {state.listening ? (
@@ -262,6 +308,8 @@ function MainApp() {
   const [modelCatalog, setModelCatalog] = useState<any[]>([]);
   const [modelBusy, setModelBusy] = useState<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const startInProgressRef = useRef(false);
+  const listeningGenerationRef = useRef(0);
   const audioRef = useRef<AudioContext | null>(null);
   const meterRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -269,6 +317,7 @@ function MainApp() {
   const settingsRef = useRef(settings);
   const speakerVerifiedRef = useRef(false);
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSampleDurationRef = useRef(0);
   const voiceTestModeRef = useRef(false);
   const voiceScoreRef = useRef<number | null>(null);
@@ -503,7 +552,7 @@ function MainApp() {
       if (event.type === "speaker_verified") {
         voiceScoreRef.current = typeof event.score === "number" ? event.score : null;
         speakerVerifiedRef.current = true;
-        setStatus("verified");
+        if (!voiceTestModeRef.current) setStatus("listening");
         if (voiceTestModeRef.current) {
           if (voiceTestTimerRef.current)
             clearTimeout(voiceTestTimerRef.current);
@@ -517,7 +566,7 @@ function MainApp() {
       if (event.type === "speaker_rejected") {
         voiceScoreRef.current = typeof event.score === "number" ? event.score : null;
         speakerVerifiedRef.current = false;
-        setStatus("rejected");
+        if (!voiceTestModeRef.current) setStatus("listening");
         if (voiceTestModeRef.current) {
           if (voiceTestTimerRef.current)
             clearTimeout(voiceTestTimerRef.current);
@@ -538,8 +587,11 @@ function MainApp() {
           setError(event.reason || "语音片段太短，暂时无法完成声纹验证。");
           setTimeout(stopListening, 300);
         } else {
-          setStatus("processing");
+          setStatus("listening");
         }
+      }
+      if (event.type === "speech_end" && streamRef.current && !voiceTestModeRef.current) {
+        setStatus("listening");
       }
       if (event.type === "final") {
         if (voiceTestModeRef.current) return;
@@ -637,13 +689,18 @@ function MainApp() {
     return () => {
       remove?.();
       if (voiceTestTimerRef.current) clearTimeout(voiceTestTimerRef.current);
+      if (recordStopTimerRef.current) clearTimeout(recordStopTimerRef.current);
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       streamRef.current?.getTracks().forEach((track) => track.stop());
       processorRef.current?.disconnect();
       audioRef.current?.close();
+      window.desktop?.speech.stop();
     };
   }, [refreshDevices, recordConversation]);
 
   const stopListening = useCallback(() => {
+    listeningGenerationRef.current += 1;
+    startInProgressRef.current = false;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     processorRef.current?.disconnect();
@@ -656,6 +713,9 @@ function MainApp() {
   }, []);
   const startListening = useCallback(
     async (requireSpeaker = settings.onlyMyVoice) => {
+      if (startInProgressRef.current || streamRef.current) return;
+      const generation = ++listeningGenerationRef.current;
+      startInProgressRef.current = true;
       setError("");
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -663,6 +723,10 @@ function MainApp() {
             ? { deviceId: { exact: settings.microphoneId } }
             : true,
         });
+        if (generation !== listeningGenerationRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         streamRef.current = stream;
         const audio = new AudioContext();
         audioRef.current = audio;
@@ -691,6 +755,7 @@ function MainApp() {
           vadModelId: settings.vadModelId,
           speakerModelId: settings.speakerModelId,
         });
+        if (generation !== listeningGenerationRef.current) return;
         setStatus("listening");
         if (!voiceTestModeRef.current) setTranscript("正在聆听…");
         const data = new Uint8Array(analyser.frequencyBinCount);
@@ -698,6 +763,7 @@ function MainApp() {
           analyser.getByteFrequencyData(data);
         }, 120);
       } catch (cause) {
+        if (generation !== listeningGenerationRef.current) return;
         stopListening();
         if (voiceTestModeRef.current) {
           setVoiceTest("error");
@@ -707,8 +773,11 @@ function MainApp() {
         setError(
           cause instanceof Error
             ? cause.message
-            : "无法访问麦克风或本地模型未就绪。",
+          : "无法访问麦克风或本地模型未就绪。",
         );
+      } finally {
+        if (generation === listeningGenerationRef.current)
+          startInProgressRef.current = false;
       }
     },
     [
@@ -728,6 +797,7 @@ function MainApp() {
 
   const startSample = async () => {
     if (recordingSample) return;
+    let enrollmentStarted = false;
     try {
       if (!streamRef.current) {
         await startListening();
@@ -737,9 +807,11 @@ function MainApp() {
         type: "enroll_start",
       });
       if (!started?.sent) throw new Error("语音服务尚未连接，请稍后重试。");
+      enrollmentStarted = true;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
+      if (recordStopTimerRef.current) clearTimeout(recordStopTimerRef.current);
       recorder.start();
       setRecordingSample(true);
       setRecordSeconds(0);
@@ -749,6 +821,10 @@ function MainApp() {
       );
       const startedAt = Date.now();
       recorder.onstop = () => {
+        if (recordStopTimerRef.current) {
+          clearTimeout(recordStopTimerRef.current);
+          recordStopTimerRef.current = null;
+        }
         stream.getTracks().forEach((track) => track.stop());
         pendingSampleDurationRef.current = Math.max(
           1,
@@ -756,13 +832,16 @@ function MainApp() {
         );
         setRecordingSample(false);
         if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        if (mediaRecorderRef.current === recorder) mediaRecorderRef.current = null;
         window.desktop?.speech.command({ type: "enroll_end" });
       };
-      setTimeout(() => {
+      recordStopTimerRef.current = setTimeout(() => {
+        recordStopTimerRef.current = null;
         if (mediaRecorderRef.current?.state === "recording")
           mediaRecorderRef.current.stop();
       }, 15000);
     } catch {
+      if (enrollmentStarted) window.desktop?.speech.command({ type: "enroll_end" });
       setError("声纹录制需要麦克风权限。");
     }
   };
