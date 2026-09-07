@@ -632,9 +632,8 @@ select {
   text-align: center;
 }
 .voice-test-result {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  gap: 10px;
   margin-top: 14px;
   padding: 11px 12px;
   border: 1px solid #deddd9;
@@ -642,6 +641,48 @@ select {
   color: #64635f;
   background: #fafaf8;
   font-size: 12px;
+}
+.voice-test-result-message,
+.voice-score-heading,
+.voice-score-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.voice-test-result-message {
+  justify-content: flex-start;
+}
+.voice-score-heading strong {
+  color: #222;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.voice-score-track {
+  position: relative;
+  height: 8px;
+  overflow: visible;
+  border-radius: 999px;
+  background: #e8e7e3;
+}
+.voice-score-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #777;
+  transition: width 240ms ease;
+}
+.voice-score-track i {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  border-radius: 2px;
+  background: #222;
+}
+.voice-score-meta {
+  color: #777;
+  font-size: 11px;
 }
 .voice-test-dot {
   width: 8px;
@@ -662,6 +703,9 @@ select {
 .voice-test.passed .voice-test-dot {
   background: #3d9856;
 }
+.voice-test.passed .voice-score-track span {
+  background: #3d9856;
+}
 .voice-test.failed .voice-test-result,
 .voice-test.timeout .voice-test-result,
 .voice-test.error .voice-test-result {
@@ -672,6 +716,11 @@ select {
 .voice-test.failed .voice-test-dot,
 .voice-test.timeout .voice-test-dot,
 .voice-test.error .voice-test-dot {
+  background: #c94b43;
+}
+.voice-test.failed .voice-score-track span,
+.voice-test.timeout .voice-score-track span,
+.voice-test.error .voice-score-track span {
   background: #c94b43;
 }
 .floating-wrap {

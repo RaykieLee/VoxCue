@@ -298,6 +298,7 @@ function MainApp() {
   const [recordingSample, setRecordingSample] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [voiceTest, setVoiceTest] = useState<VoiceTestStatus>("idle");
+  const [voiceTestScore, setVoiceTestScore] = useState<number | null>(null);
   const [conversationHistory, setConversationHistory] = useState<ConversationEntry[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
@@ -307,6 +308,7 @@ function MainApp() {
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false);
   const [modelCatalog, setModelCatalog] = useState<any[]>([]);
   const [modelBusy, setModelBusy] = useState<string | null>(null);
+  const micCheckInProgressRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const startInProgressRef = useRef(false);
   const listeningGenerationRef = useRef(0);
@@ -501,6 +503,8 @@ function MainApp() {
     }
   }, []);
   const checkMicrophone = useCallback(async () => {
+    if (micCheckInProgressRef.current) return;
+    micCheckInProgressRef.current = true;
     setMicCheck("checking");
     setMicLevel(0);
     setError("");
@@ -535,7 +539,11 @@ function MainApp() {
       setError("麦克风检测失败，请在系统设置中允许 VoxCue 使用麦克风。");
     } finally {
       stream?.getTracks().forEach((track) => track.stop());
-      await audio?.close();
+      try {
+        await audio?.close();
+      } finally {
+        micCheckInProgressRef.current = false;
+      }
     }
   }, [settings.microphoneId]);
   useEffect(() => {
@@ -550,10 +558,12 @@ function MainApp() {
         setStatus("listening");
       }
       if (event.type === "speaker_verified") {
-        voiceScoreRef.current = typeof event.score === "number" ? event.score : null;
+        const score = typeof event.score === "number" ? event.score : null;
+        voiceScoreRef.current = score;
         speakerVerifiedRef.current = true;
         if (!voiceTestModeRef.current) setStatus("listening");
         if (voiceTestModeRef.current) {
+          setVoiceTestScore(score);
           if (voiceTestTimerRef.current)
             clearTimeout(voiceTestTimerRef.current);
           setVoiceTest("passed");
@@ -564,10 +574,12 @@ function MainApp() {
         }
       }
       if (event.type === "speaker_rejected") {
-        voiceScoreRef.current = typeof event.score === "number" ? event.score : null;
+        const score = typeof event.score === "number" ? event.score : null;
+        voiceScoreRef.current = score;
         speakerVerifiedRef.current = false;
         if (!voiceTestModeRef.current) setStatus("listening");
         if (voiceTestModeRef.current) {
+          setVoiceTestScore(score);
           if (voiceTestTimerRef.current)
             clearTimeout(voiceTestTimerRef.current);
           setVoiceTest("failed");
@@ -581,6 +593,7 @@ function MainApp() {
         voiceScoreRef.current = null;
         speakerVerifiedRef.current = false;
         if (voiceTestModeRef.current) {
+          setVoiceTestScore(null);
           setVoiceTest("error");
           voiceTestModeRef.current = false;
           if (voiceTestTimerRef.current) clearTimeout(voiceTestTimerRef.current);
@@ -864,6 +877,7 @@ function MainApp() {
     }
     stopListening();
     setError("");
+    setVoiceTestScore(null);
     setVoiceTest("listening");
     voiceTestModeRef.current = true;
     await startListening(true);
@@ -1120,14 +1134,6 @@ function MainApp() {
       <section className="main-area">
         <header className="topbar">
           <span>{pageNames[page]}</span>
-          <div>
-            <button className="icon-button">
-              <Icon name="help" />
-            </button>
-            <button className="icon-button">
-              <Icon name="more" />
-            </button>
-          </div>
         </header>
         <main>
           {page === "onboarding" && (
@@ -1137,6 +1143,7 @@ function MainApp() {
                 setPage("voice");
               }}
               onMic={checkMicrophone}
+              onRefreshDevices={refreshDevices}
               devices={devices}
               selectedDevice={settings.microphoneId}
               onDevice={(microphoneId) => {
@@ -1193,18 +1200,27 @@ function MainApp() {
               seconds={recordSeconds}
               onStart={startSample}
               onStop={stopSample}
-              onDelete={(id) => {
+              onDelete={async (id) => {
+                const index = settings.voiceSamples.findIndex(
+                  (sample) => sample.id === id,
+                );
+                if (index < 0) return;
                 const next = settings.voiceSamples.filter(
                   (sample) => sample.id !== id,
                 );
-                save({ voiceSamples: next });
-                if (!next.length) window.desktop?.speech.clearSpeaker();
+                try {
+                  await window.desktop?.speech.removeSpeakerSample(index);
+                  await save({ voiceSamples: next });
+                } catch (cause) {
+                  setError(cause instanceof Error ? cause.message : "删除声纹样本失败");
+                }
               }}
               threshold={Math.round(settings.speakerThreshold * 100)}
               onThreshold={(value) => save({ speakerThreshold: value / 100 })}
               onlyMyVoice={settings.onlyMyVoice}
               onOnlyMyVoice={(value) => save({ onlyMyVoice: value })}
               voiceTest={voiceTest}
+              voiceTestScore={voiceTestScore}
               onVoiceTest={runVoiceTest}
               errorMessage={error}
             />
@@ -1510,6 +1526,7 @@ function ModelSetup({
 function OnboardingFlow({
   onFinish,
   onMic,
+  onRefreshDevices,
   devices,
   selectedDevice,
   onDevice,
@@ -1532,6 +1549,7 @@ function OnboardingFlow({
 }: {
   onFinish: () => void;
   onMic: () => void;
+  onRefreshDevices: () => void;
   devices: MediaDeviceInfo[];
   selectedDevice: string;
   onDevice: (id: string) => void;
@@ -1553,6 +1571,12 @@ function OnboardingFlow({
   onSelectModel: (type: ModelType, id: string) => void;
 }) {
   const [step, setStep] = useState(0);
+  const autoMicCheckStartedRef = useRef(false);
+  useEffect(() => {
+    if (step !== 0 || autoMicCheckStartedRef.current) return;
+    autoMicCheckStartedRef.current = true;
+    onMic();
+  }, [onMic, step]);
   const modelsReady = ["asrModelId", "vadModelId", "speakerModelId"].every((key) => {
     const selected = settings[key as keyof Settings];
     return catalog.some((model) => model.id === selected && model.installed);
@@ -1648,7 +1672,7 @@ function OnboardingFlow({
                       ? "麦克风已连接，但没有检测到声音。"
                       : micCheck === "error"
                         ? "无法访问麦克风。"
-                        : "点击检测按钮并说几句话。"}
+                        : "正在准备自动检测麦克风…"}
               </p>
               <div className="meter">
                 {Array.from({ length: 8 }, (_, index) => (
@@ -1668,14 +1692,9 @@ function OnboardingFlow({
               </div>
               <button
                 className="secondary-button"
-                onClick={onMic}
-                disabled={micCheck === "checking"}
+                onClick={onRefreshDevices}
               >
-                {micCheck === "checking"
-                  ? "检测中…"
-                  : micCheck === "ok"
-                    ? "重新检测"
-                    : "授权并检测麦克风"}
+                刷新麦克风列表
               </button>
             </>
           )}
@@ -1976,6 +1995,7 @@ function VoiceprintPage({
   onlyMyVoice,
   onOnlyMyVoice,
   voiceTest,
+  voiceTestScore,
   onVoiceTest,
   errorMessage,
 }: {
@@ -1990,9 +2010,13 @@ function VoiceprintPage({
   onlyMyVoice: boolean;
   onOnlyMyVoice: (value: boolean) => void;
   voiceTest: VoiceTestStatus;
+  voiceTestScore: number | null;
   onVoiceTest: () => void;
   errorMessage: string;
 }) {
+  const scorePercent = voiceTestScore === null
+    ? null
+    : Math.round(Math.max(0, Math.min(1, voiceTestScore)) * 100);
   const testMessage =
     voiceTest === "listening"
       ? "正在聆听，请自然地说一句完整的话…"
@@ -2046,9 +2070,36 @@ function VoiceprintPage({
           </button>
         </div>
         {voiceTest !== "idle" && (
-          <div className="voice-test-result">
-            <span className="voice-test-dot" />
-            {testMessage}
+          <div className="voice-test-result" aria-live="polite">
+            <div className="voice-test-result-message">
+              <span className="voice-test-dot" />
+              <span>{testMessage}</span>
+            </div>
+            <div className="voice-score-heading">
+              <span>当前匹配分数</span>
+              <strong>{scorePercent === null ? "等待结果" : `${scorePercent} / 100`}</strong>
+            </div>
+            <div
+              className="voice-score-track"
+              role="progressbar"
+              aria-label="当前声纹匹配分数"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={scorePercent ?? 0}
+            >
+              <span style={{ width: `${scorePercent ?? 0}%` }} />
+              <i style={{ left: `${threshold}%` }} aria-hidden="true" />
+            </div>
+            <div className="voice-score-meta">
+              <span>通过阈值 {threshold} / 100</span>
+              {scorePercent !== null && (
+                <span>
+                  {scorePercent >= threshold
+                    ? `高于阈值 ${scorePercent - threshold} 分`
+                    : `低于阈值 ${threshold - scorePercent} 分`}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -2103,6 +2154,7 @@ function VoiceprintPage({
           </div>
           <input
             type="range"
+            aria-label="声纹验证阈值"
             min="0"
             max="100"
             value={threshold}

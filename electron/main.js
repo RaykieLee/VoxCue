@@ -736,12 +736,14 @@ function createWindow() {
     alwaysOnTop: false,
     skipTaskbar: false,
     hasShadow: true,
+    autoHideMenuBar: process.platform === "win32",
     webPreferences: {
       preload: path.join(root, "electron", "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  if (process.platform === "win32") window.setMenu(null);
 
   const devUrl = process.env.VITE_DEV_SERVER_URL || "http://localhost:5173";
   if (!app.isPackaged) window.loadURL(devUrl);
@@ -955,10 +957,32 @@ ipcMain.handle("speech:command", (_event, command) => {
   speechSocket.send(JSON.stringify(command));
   return { sent: true };
 });
+ipcMain.handle("speech:remove-speaker-sample", (_event, indexValue) => {
+  const index = Number(indexValue);
+  const embeddingPath = path.join(app.getPath("userData"), "voiceprint.json");
+  if (!Number.isInteger(index) || index < 0)
+    throw new Error("声纹样本索引无效");
+  let embeddings = [];
+  try {
+    const saved = JSON.parse(fs.readFileSync(embeddingPath, "utf8"));
+    embeddings = Array.isArray(saved[0]) ? saved : [saved];
+  } catch {}
+  if (index >= embeddings.length) throw new Error("声纹样本不存在");
+  embeddings.splice(index, 1);
+  if (embeddings.length) fs.writeFileSync(embeddingPath, JSON.stringify(embeddings));
+  else {
+    try { fs.unlinkSync(embeddingPath); } catch {}
+  }
+  if (speechSocket?.readyState === WebSocket.OPEN)
+    speechSocket.send(JSON.stringify({ type: "remove_speaker_sample", index }));
+  return { removed: true, remaining: embeddings.length };
+});
 ipcMain.handle("speech:clear-speaker", () => {
   try {
     fs.unlinkSync(path.join(app.getPath("userData"), "voiceprint.json"));
   } catch {}
+  if (speechSocket?.readyState === WebSocket.OPEN)
+    speechSocket.send(JSON.stringify({ type: "clear_speaker" }));
   return { cleared: true };
 });
 ipcMain.handle("speech:stop", () => {

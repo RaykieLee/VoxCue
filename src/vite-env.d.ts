@@ -46,6 +46,7 @@ interface Window {
       start: (options?: any) => Promise<any>
       push: (samples: ArrayBufferLike) => Promise<any>
       command: (command: any) => Promise<any>
+      removeSpeakerSample: (index: number) => Promise<{ removed: boolean; remaining: number }>
       clearSpeaker: () => Promise<any>
       stop: () => Promise<any>
       onEvent: (callback: (event: any) => void) => () => void
