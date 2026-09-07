@@ -57,7 +57,7 @@ const defaultSettings = {
   onlyMyVoice: true,
   speakerThreshold: 0.55,
   modelLanguage: "中英双语",
-  endpointSeconds: 0.8,
+  endpointSeconds: 1.2,
   punctuation: true,
   writeToChatGPT: true,
   autoSend: false,
@@ -934,7 +934,14 @@ ipcMain.handle("cdp:sessions-switch", (_event, { id, href }) =>
 ipcMain.handle("cdp:sessions-new", () => createCdpSession());
 ipcMain.handle("cdp:snapshot", () => snapshotCdpConversation());
 ipcMain.handle("shell:open-external", (_event, url) => shell.openExternal(url));
-ipcMain.handle("speech:start", (_event, options) => startSpeech(options));
+ipcMain.handle("speech:start", async (_event, options) => {
+  try {
+    return await startSpeech(options);
+  } catch (error) {
+    stopSpeech();
+    throw error;
+  }
+});
 ipcMain.handle("speech:push", (_event, samples) => {
   if (!speechSocket || speechSocket.readyState !== WebSocket.OPEN)
     return { sent: false };
