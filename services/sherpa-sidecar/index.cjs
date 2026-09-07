@@ -38,7 +38,7 @@ function createEngine() {
   const joiner = process.env.SHERPA_ASR_JOINER || ''
   const tokens = required('SHERPA_ASR_TOKENS')
   const vadModel = required('SHERPA_VAD_MODEL')
-  const endpointSeconds = Math.max(0.5, Math.min(3, Number(process.env.SHERPA_ENDPOINT_SECONDS) || 0.8))
+  const endpointSeconds = Math.max(0.5, Math.min(3, Number(process.env.SHERPA_ENDPOINT_SECONDS) || 1.2))
   const modelConfig = asrType === 'paraformer'
     ? { paraformer: { encoder, decoder }, tokens, numThreads: Number(process.env.SHERPA_THREADS || 2) }
     : { transducer: { encoder, decoder, joiner: required('SHERPA_ASR_JOINER') }, tokens, numThreads: Number(process.env.SHERPA_THREADS || 2) }
