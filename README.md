@@ -71,10 +71,16 @@ macOS：
 open -a "ChatGPT" --args --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1
 ```
 
-Windows PowerShell（根据实际安装位置调整路径）：
+Windows PowerShell（自动适配 Microsoft Store/MSIX 和 `%LOCALAPPDATA%` 安装）：
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\ChatGPT\ChatGPT.exe" --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1
+$executable = Get-AppxPackage | Where-Object { $_.Name -like "OpenAI.*" } |
+  ForEach-Object { Join-Path $_.InstallLocation "app\ChatGPT.exe" } |
+  Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $executable) {
+  $executable = "$env:LOCALAPPDATA\Programs\ChatGPT\ChatGPT.exe"
+}
+& $executable --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1
 ```
 
 在浏览器打开 `http://127.0.0.1:9222/json/list`，确认能看到目标页面，再回到 VoxCue 检测连接。端口连通之外，还需要目标页面已登录且存在可用输入框。

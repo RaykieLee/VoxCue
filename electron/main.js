@@ -344,6 +344,44 @@ function runAndWait(command, args) {
   });
 }
 
+function runAndCapture(command, args) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
+    let output = "";
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString();
+    });
+    child.once("error", () => resolve(output));
+    child.once("exit", () => resolve(output));
+  });
+}
+
+async function findWindowsChatGptExecutable() {
+  const powershell = path.join(
+    process.env.SystemRoot || "C:\\Windows",
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+  const command = [
+    "$paths = @()",
+    "Get-Process -Name ChatGPT -ErrorAction SilentlyContinue | ForEach-Object { $paths += $_.Path }",
+    "Get-AppxPackage | Where-Object { $_.Name -like 'OpenAI.*' } | ForEach-Object { $paths += (Join-Path $_.InstallLocation 'app\\ChatGPT.exe') }",
+    "$paths | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique",
+  ].join("; ");
+  const output = await runAndCapture(powershell, [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    command,
+  ]);
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /\\ChatGPT\.exe$/i.test(line));
+}
+
 async function launchChatGpt(portValue) {
   const port = Number(portValue);
   if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -365,7 +403,9 @@ async function launchChatGpt(portValue) {
     });
     child.unref();
   } else if (process.platform === "win32") {
+    const detectedExecutable = await findWindowsChatGptExecutable();
     await runAndWait("taskkill", ["/IM", "ChatGPT.exe", "/T"]);
+    await wait(1200);
     const candidates = [
       path.join(
         process.env.LOCALAPPDATA || "",
@@ -374,8 +414,15 @@ async function launchChatGpt(portValue) {
         "ChatGPT.exe",
       ),
       path.join(process.env.LOCALAPPDATA || "", "ChatGPT", "ChatGPT.exe"),
+      path.join(
+        process.env.LOCALAPPDATA || "",
+        "Microsoft",
+        "WindowsApps",
+        "ChatGPT.exe",
+      ),
     ];
-    const executable = candidates.find((candidate) => fs.existsSync(candidate));
+    const executable =
+      detectedExecutable || candidates.find((candidate) => fs.existsSync(candidate));
     if (!executable)
       throw new Error("没有找到 ChatGPT 桌面端，请先安装 ChatGPT");
     const child = spawn(executable, args, { detached: true, stdio: "ignore" });
