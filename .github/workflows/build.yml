@@ -3,7 +3,7 @@ name: build-desktop
 on:
   push:
     branches: [main]
-    tags: ['0.1']
+    tags: ['0.*']
   pull_request:
 
 permissions:
