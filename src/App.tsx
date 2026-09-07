@@ -298,6 +298,7 @@ function MainApp() {
   const [recordingSample, setRecordingSample] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [voiceTest, setVoiceTest] = useState<VoiceTestStatus>("idle");
+  const [voiceTestScore, setVoiceTestScore] = useState<number | null>(null);
   const [conversationHistory, setConversationHistory] = useState<ConversationEntry[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
@@ -557,10 +558,12 @@ function MainApp() {
         setStatus("listening");
       }
       if (event.type === "speaker_verified") {
-        voiceScoreRef.current = typeof event.score === "number" ? event.score : null;
+        const score = typeof event.score === "number" ? event.score : null;
+        voiceScoreRef.current = score;
         speakerVerifiedRef.current = true;
         if (!voiceTestModeRef.current) setStatus("listening");
         if (voiceTestModeRef.current) {
+          setVoiceTestScore(score);
           if (voiceTestTimerRef.current)
             clearTimeout(voiceTestTimerRef.current);
           setVoiceTest("passed");
@@ -571,10 +574,12 @@ function MainApp() {
         }
       }
       if (event.type === "speaker_rejected") {
-        voiceScoreRef.current = typeof event.score === "number" ? event.score : null;
+        const score = typeof event.score === "number" ? event.score : null;
+        voiceScoreRef.current = score;
         speakerVerifiedRef.current = false;
         if (!voiceTestModeRef.current) setStatus("listening");
         if (voiceTestModeRef.current) {
+          setVoiceTestScore(score);
           if (voiceTestTimerRef.current)
             clearTimeout(voiceTestTimerRef.current);
           setVoiceTest("failed");
@@ -588,6 +593,7 @@ function MainApp() {
         voiceScoreRef.current = null;
         speakerVerifiedRef.current = false;
         if (voiceTestModeRef.current) {
+          setVoiceTestScore(null);
           setVoiceTest("error");
           voiceTestModeRef.current = false;
           if (voiceTestTimerRef.current) clearTimeout(voiceTestTimerRef.current);
@@ -871,6 +877,7 @@ function MainApp() {
     }
     stopListening();
     setError("");
+    setVoiceTestScore(null);
     setVoiceTest("listening");
     voiceTestModeRef.current = true;
     await startListening(true);
@@ -1127,14 +1134,6 @@ function MainApp() {
       <section className="main-area">
         <header className="topbar">
           <span>{pageNames[page]}</span>
-          <div>
-            <button className="icon-button">
-              <Icon name="help" />
-            </button>
-            <button className="icon-button">
-              <Icon name="more" />
-            </button>
-          </div>
         </header>
         <main>
           {page === "onboarding" && (
@@ -1221,6 +1220,7 @@ function MainApp() {
               onlyMyVoice={settings.onlyMyVoice}
               onOnlyMyVoice={(value) => save({ onlyMyVoice: value })}
               voiceTest={voiceTest}
+              voiceTestScore={voiceTestScore}
               onVoiceTest={runVoiceTest}
               errorMessage={error}
             />
@@ -1995,6 +1995,7 @@ function VoiceprintPage({
   onlyMyVoice,
   onOnlyMyVoice,
   voiceTest,
+  voiceTestScore,
   onVoiceTest,
   errorMessage,
 }: {
@@ -2009,9 +2010,13 @@ function VoiceprintPage({
   onlyMyVoice: boolean;
   onOnlyMyVoice: (value: boolean) => void;
   voiceTest: VoiceTestStatus;
+  voiceTestScore: number | null;
   onVoiceTest: () => void;
   errorMessage: string;
 }) {
+  const scorePercent = voiceTestScore === null
+    ? null
+    : Math.round(Math.max(0, Math.min(1, voiceTestScore)) * 100);
   const testMessage =
     voiceTest === "listening"
       ? "正在聆听，请自然地说一句完整的话…"
@@ -2065,9 +2070,36 @@ function VoiceprintPage({
           </button>
         </div>
         {voiceTest !== "idle" && (
-          <div className="voice-test-result">
-            <span className="voice-test-dot" />
-            {testMessage}
+          <div className="voice-test-result" aria-live="polite">
+            <div className="voice-test-result-message">
+              <span className="voice-test-dot" />
+              <span>{testMessage}</span>
+            </div>
+            <div className="voice-score-heading">
+              <span>当前匹配分数</span>
+              <strong>{scorePercent === null ? "等待结果" : `${scorePercent} / 100`}</strong>
+            </div>
+            <div
+              className="voice-score-track"
+              role="progressbar"
+              aria-label="当前声纹匹配分数"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={scorePercent ?? 0}
+            >
+              <span style={{ width: `${scorePercent ?? 0}%` }} />
+              <i style={{ left: `${threshold}%` }} aria-hidden="true" />
+            </div>
+            <div className="voice-score-meta">
+              <span>通过阈值 {threshold} / 100</span>
+              {scorePercent !== null && (
+                <span>
+                  {scorePercent >= threshold
+                    ? `高于阈值 ${scorePercent - threshold} 分`
+                    : `低于阈值 ${threshold - scorePercent} 分`}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -2122,6 +2154,7 @@ function VoiceprintPage({
           </div>
           <input
             type="range"
+            aria-label="声纹验证阈值"
             min="0"
             max="100"
             value={threshold}
