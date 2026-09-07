@@ -25,6 +25,7 @@ type VoiceTestStatus =
   | "timeout"
   | "error";
 type SendStatus = "idle" | "writing" | "written" | "sent" | "failed";
+type ModelType = "asr" | "vad" | "speaker";
 type ConversationEntry = {
   id: number;
   text: string;
@@ -923,11 +924,16 @@ function MainApp() {
     const next = pinned.includes(id) ? pinned.filter((item) => item !== id) : [...pinned, id];
     await save({ pinnedSessionIds: next });
   };
-  const downloadModel = async (id: string) => {
+  const downloadModel = async (id: string, select?: { type: ModelType; id: string }) => {
     setModelBusy(id);
     setError("");
     try {
-      await window.desktop?.models.download(id);
+      const downloaded = await window.desktop?.models.download(id);
+      if (select && downloaded?.installed) {
+        const value = await window.desktop?.models.select(select.type, select.id);
+        const key = select.type === "asr" ? "asrModelId" : select.type === "vad" ? "vadModelId" : "speakerModelId";
+        setSettings((old) => ({ ...old, [key]: select.id, ...(value || {}) }));
+      }
       await refreshModels();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "模型下载失败");
@@ -935,7 +941,7 @@ function MainApp() {
       setModelBusy(null);
     }
   };
-  const selectModel = async (type: "asr" | "vad" | "speaker", id: string) => {
+  const selectModel = async (type: ModelType, id: string) => {
     setError("");
     try {
       const value = await window.desktop?.models.select(type, id);
@@ -1371,15 +1377,55 @@ function ModelSetup({
   catalog: any[];
   settings: Settings;
   busy: string | null;
-  onDownload: (id: string) => void;
-  onSelect: (type: "asr" | "vad" | "speaker", id: string) => void;
+  onDownload: (id: string, select?: { type: ModelType; id: string }) => void;
+  onSelect: (type: ModelType, id: string) => void;
 }) {
   const groups = [
-    { type: "asr" as const, label: "ASR 识别", key: "asrModelId" as const },
-    { type: "vad" as const, label: "VAD 检测", key: "vadModelId" as const },
-    { type: "speaker" as const, label: "声纹", key: "speakerModelId" as const },
+    { type: "asr" as ModelType, label: "ASR 识别", key: "asrModelId" as const },
+    { type: "vad" as ModelType, label: "VAD 检测", key: "vadModelId" as const },
+    { type: "speaker" as ModelType, label: "声纹", key: "speakerModelId" as const },
   ];
-  return <div className="model-setup"><strong>选择本机模型</strong><small>默认使用当前配置；选择未下载的模型会先下载再启用。</small>{groups.map((group) => { const models = catalog.filter((item) => item.type === group.type); const current = models.find((item) => item.id === settings[group.key]); return <div className="model-setup-row" key={group.type}><label>{group.label}<select value={current?.id || ""} onChange={(event) => { const next = models.find((model) => model.id === event.target.value); if (next?.installed) onSelect(group.type, next.id); else if (next) onDownload(next.id); }}>{models.map((model) => <option key={model.id} value={model.id}>{model.name}{model.installed ? "" : "（点击后下载）"}</option>)}</select></label>{current && !current.installed && <button className="secondary-button" onClick={() => onDownload(current.id)} disabled={busy === current.id}>{busy === current.id ? "下载中…" : "下载"}</button>}</div>})}</div>;
+  return (
+    <div className="model-setup">
+      <strong>选择本机模型</strong>
+      <small>选择未下载的模型会先下载，下载完成后自动启用。</small>
+      {groups.map((group) => {
+        const models = catalog.filter((item) => item.type === group.type);
+        const current = models.find((item) => item.id === settings[group.key]);
+        return (
+          <div className="model-setup-row" key={group.type}>
+            <label>
+              {group.label}
+              <select
+                value={current?.id || ""}
+                onChange={(event) => {
+                  const next = models.find((model) => model.id === event.target.value);
+                  if (next?.installed) onSelect(group.type, next.id);
+                  else if (next) onDownload(next.id, { type: group.type, id: next.id });
+                }}
+              >
+                {models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                    {model.installed ? "" : "（选择后下载）"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {current && !current.installed && (
+              <button
+                className="secondary-button"
+                onClick={() => onDownload(current.id, { type: group.type, id: current.id })}
+                disabled={busy === current.id}
+              >
+                {busy === current.id ? "下载中…" : "下载并启用"}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function OnboardingFlow({
@@ -1424,8 +1470,8 @@ function OnboardingFlow({
   catalog: any[];
   settings: Settings;
   modelBusy: string | null;
-  onDownloadModel: (id: string) => void;
-  onSelectModel: (type: "asr" | "vad" | "speaker", id: string) => void;
+  onDownloadModel: (id: string, select?: { type: ModelType; id: string }) => void;
+  onSelectModel: (type: ModelType, id: string) => void;
 }) {
   const [step, setStep] = useState(0);
   const modelsReady = ["asrModelId", "vadModelId", "speakerModelId"].every((key) => {
@@ -1436,18 +1482,18 @@ function OnboardingFlow({
     step === 0
       ? micCheck === "ok"
       : step === 1
-        ? samples.length > 0
+        ? modelsReady
         : step === 2
-          ? cdpConnected
+          ? samples.length > 0
           : step === 3
-            ? modelsReady
+            ? cdpConnected
             : true;
   const next = () => {
     if (!canNext) return;
     if (step < titles.length - 1) setStep(step + 1);
     else onFinish();
   };
-  const titles = ["连接麦克风", "登记声纹", "连接 ChatGPT", "选择模型", "完成设置"];
+  const titles = ["连接麦克风", "选择模型", "登记声纹", "连接 ChatGPT", "完成设置"];
   return (
     <>
       <PageHead
@@ -1468,12 +1514,12 @@ function OnboardingFlow({
                 step === 0
                   ? "mic"
                   : step === 1
-                    ? "fingerprint"
+                    ? "sparkle"
                     : step === 2
-                      ? "target"
-                      : step === 3
-                        ? "sparkle"
-                        : "check"
+                        ? "fingerprint"
+                        : step === 3
+                          ? "target"
+                          : "check"
               }
               size={30}
             />
@@ -1485,15 +1531,15 @@ function OnboardingFlow({
                 ? "已发现麦克风"
                 : "尚未检测"
               : step === 1
-                ? samples.length
-                  ? `已登记 ${samples.length} 段`
-                  : "建议登记至少 1 段"
+                ? (modelsReady ? "模型已就绪" : "请选择并下载模型")
                 : step === 2
-                  ? cdpConnected
-                    ? "ChatGPT 已连接"
-                    : "等待连接"
+                  ? samples.length
+                    ? `已登记 ${samples.length} 段`
+                    : "建议登记至少 1 段"
                   : step === 3
-                    ? (modelsReady ? "模型已就绪" : "请选择并下载模型")
+                    ? cdpConnected
+                      ? "ChatGPT 已连接"
+                      : "等待连接"
                     : "可以开始使用"}
           </small>
         </div>
@@ -1556,6 +1602,12 @@ function OnboardingFlow({
           )}
           {step === 1 && (
             <>
+              <p className="hint">为 ASR、VAD 和声纹分别选择模型。声纹模型必须在登记声纹前下载就绪。</p>
+              <ModelSetup catalog={catalog} settings={settings} busy={modelBusy} onDownload={onDownloadModel} onSelect={onSelectModel} />
+            </>
+          )}
+          {step === 2 && (
+            <>
               <p className="hint">
                 录制一段自然语音作为声纹样本。内容只保存在本机，不会发送到
                 ChatGPT。
@@ -1574,7 +1626,7 @@ function OnboardingFlow({
               </button>
             </>
           )}
-          {step === 2 && (
+          {step === 3 && (
             <>
               <p className="hint">
                 连接后，识别结果可以自动写入 ChatGPT
@@ -1598,15 +1650,9 @@ function OnboardingFlow({
               </div>
             </>
           )}
-          {step === 3 && (
-            <>
-              <p className="hint">为 ASR、VAD 和声纹分别选择模型。未下载的模型会在选择后下载，默认已选当前配置。</p>
-              <ModelSetup catalog={catalog} settings={settings} busy={modelBusy} onDownload={onDownloadModel} onSelect={onSelectModel} />
-            </>
-          )}
           {step === 4 && (
             <div className="onboarding-summary">
-              <p>麦克风、声纹和 ChatGPT 连接均已完成。</p>
+              <p>麦克风、模型、声纹和 ChatGPT 连接均已完成。</p>
               <p className="hint">
                 你可以在设置中调整断句间隔、停止词、悬浮窗和快捷键。
               </p>
@@ -2140,13 +2186,13 @@ function ModelsPage({
   catalog: any[];
   settings: Settings;
   busy: string | null;
-  onDownload: (id: string) => void;
-  onSelect: (type: "asr" | "vad" | "speaker", id: string) => void;
+  onDownload: (id: string, select?: { type: ModelType; id: string }) => void;
+  onSelect: (type: ModelType, id: string) => void;
 }) {
   const groups = [
-    { type: "asr" as const, title: "ASR 语音识别", key: "asrModelId" as const, note: "决定实时转写的语言、准确率和延迟。" },
-    { type: "vad" as const, title: "VAD 语音检测", key: "vadModelId" as const, note: "负责判断何时开始和结束说话。" },
-    { type: "speaker" as const, title: "声纹识别", key: "speakerModelId" as const, note: "只让登记过的声音进入转写结果。" },
+    { type: "asr" as ModelType, title: "ASR 语音识别", key: "asrModelId" as const, note: "决定实时转写的语言、准确率和延迟。" },
+    { type: "vad" as ModelType, title: "VAD 语音检测", key: "vadModelId" as const, note: "负责判断何时开始和结束说话。" },
+    { type: "speaker" as ModelType, title: "声纹识别", key: "speakerModelId" as const, note: "只让登记过的声音进入转写结果。" },
   ];
   return (
     <>
