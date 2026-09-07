@@ -42,6 +42,8 @@ body {
   /* Keep pixels outside the circle fully transparent in the native window. */
   box-shadow: none;
   -webkit-app-region: no-drag;
+  touch-action: none;
+  user-select: none;
 }
 .system-orb:hover {
   background: #f6f5f2;

@@ -6,6 +6,9 @@ interface Window {
     onSessionShortcut?: (callback: () => void) => () => void
     orb: {
       action: (action: 'toggle' | 'send' | 'show-main') => void
+      dragStart: () => void
+      move: (delta: { deltaX: number; deltaY: number }) => void
+      dragEnd: () => void
       updateState: (state: Record<string, any>) => void
       onAction: (callback: (action: string) => void) => () => void
       onState: (callback: (state: any) => void) => () => void

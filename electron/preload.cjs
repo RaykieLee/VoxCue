@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   orb: {
     action: (action) => ipcRenderer.send("orb:action", action),
+    dragStart: () => ipcRenderer.send("orb:drag-start"),
+    move: (delta) => ipcRenderer.send("orb:move", delta),
+    dragEnd: () => ipcRenderer.send("orb:drag-end"),
     updateState: (state) => ipcRenderer.send("orb:state", state),
     onAction: (callback) => {
       const listener = (_event, action) => callback(action);
