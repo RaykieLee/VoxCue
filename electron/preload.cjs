@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld("desktop", {
     start: (options) => ipcRenderer.invoke("speech:start", options),
     push: (samples) => ipcRenderer.invoke("speech:push", samples),
     command: (command) => ipcRenderer.invoke("speech:command", command),
+    removeSpeakerSample: (index) => ipcRenderer.invoke("speech:remove-speaker-sample", index),
     clearSpeaker: () => ipcRenderer.invoke("speech:clear-speaker"),
     stop: () => ipcRenderer.invoke("speech:stop"),
     onEvent: (callback) => {

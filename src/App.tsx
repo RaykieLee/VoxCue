@@ -307,6 +307,7 @@ function MainApp() {
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false);
   const [modelCatalog, setModelCatalog] = useState<any[]>([]);
   const [modelBusy, setModelBusy] = useState<string | null>(null);
+  const micCheckInProgressRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const startInProgressRef = useRef(false);
   const listeningGenerationRef = useRef(0);
@@ -501,6 +502,8 @@ function MainApp() {
     }
   }, []);
   const checkMicrophone = useCallback(async () => {
+    if (micCheckInProgressRef.current) return;
+    micCheckInProgressRef.current = true;
     setMicCheck("checking");
     setMicLevel(0);
     setError("");
@@ -535,7 +538,11 @@ function MainApp() {
       setError("麦克风检测失败，请在系统设置中允许 VoxCue 使用麦克风。");
     } finally {
       stream?.getTracks().forEach((track) => track.stop());
-      await audio?.close();
+      try {
+        await audio?.close();
+      } finally {
+        micCheckInProgressRef.current = false;
+      }
     }
   }, [settings.microphoneId]);
   useEffect(() => {
@@ -1137,6 +1144,7 @@ function MainApp() {
                 setPage("voice");
               }}
               onMic={checkMicrophone}
+              onRefreshDevices={refreshDevices}
               devices={devices}
               selectedDevice={settings.microphoneId}
               onDevice={(microphoneId) => {
@@ -1193,12 +1201,20 @@ function MainApp() {
               seconds={recordSeconds}
               onStart={startSample}
               onStop={stopSample}
-              onDelete={(id) => {
+              onDelete={async (id) => {
+                const index = settings.voiceSamples.findIndex(
+                  (sample) => sample.id === id,
+                );
+                if (index < 0) return;
                 const next = settings.voiceSamples.filter(
                   (sample) => sample.id !== id,
                 );
-                save({ voiceSamples: next });
-                if (!next.length) window.desktop?.speech.clearSpeaker();
+                try {
+                  await window.desktop?.speech.removeSpeakerSample(index);
+                  await save({ voiceSamples: next });
+                } catch (cause) {
+                  setError(cause instanceof Error ? cause.message : "删除声纹样本失败");
+                }
               }}
               threshold={Math.round(settings.speakerThreshold * 100)}
               onThreshold={(value) => save({ speakerThreshold: value / 100 })}
@@ -1510,6 +1526,7 @@ function ModelSetup({
 function OnboardingFlow({
   onFinish,
   onMic,
+  onRefreshDevices,
   devices,
   selectedDevice,
   onDevice,
@@ -1532,6 +1549,7 @@ function OnboardingFlow({
 }: {
   onFinish: () => void;
   onMic: () => void;
+  onRefreshDevices: () => void;
   devices: MediaDeviceInfo[];
   selectedDevice: string;
   onDevice: (id: string) => void;
@@ -1553,6 +1571,12 @@ function OnboardingFlow({
   onSelectModel: (type: ModelType, id: string) => void;
 }) {
   const [step, setStep] = useState(0);
+  const autoMicCheckStartedRef = useRef(false);
+  useEffect(() => {
+    if (step !== 0 || autoMicCheckStartedRef.current) return;
+    autoMicCheckStartedRef.current = true;
+    onMic();
+  }, [onMic, step]);
   const modelsReady = ["asrModelId", "vadModelId", "speakerModelId"].every((key) => {
     const selected = settings[key as keyof Settings];
     return catalog.some((model) => model.id === selected && model.installed);
@@ -1648,7 +1672,7 @@ function OnboardingFlow({
                       ? "麦克风已连接，但没有检测到声音。"
                       : micCheck === "error"
                         ? "无法访问麦克风。"
-                        : "点击检测按钮并说几句话。"}
+                        : "正在准备自动检测麦克风…"}
               </p>
               <div className="meter">
                 {Array.from({ length: 8 }, (_, index) => (
@@ -1668,14 +1692,9 @@ function OnboardingFlow({
               </div>
               <button
                 className="secondary-button"
-                onClick={onMic}
-                disabled={micCheck === "checking"}
+                onClick={onRefreshDevices}
               >
-                {micCheck === "checking"
-                  ? "检测中…"
-                  : micCheck === "ok"
-                    ? "重新检测"
-                    : "授权并检测麦克风"}
+                刷新麦克风列表
               </button>
             </>
           )}

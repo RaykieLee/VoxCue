@@ -9,6 +9,7 @@ const { WebSocketServer } = require('ws')
 const sherpa = require('sherpa-onnx-node')
 const fs = require('node:fs')
 const path = require('node:path')
+const { bestSpeakerMatch } = require('./speaker-profile.cjs')
 
 const port = Number(process.env.SHERPA_PORT || 0)
 const sampleRate = 16000
@@ -81,28 +82,33 @@ function embeddingFromSamples(samples) {
   return speakerExtractor.compute(speakerStream, false)
 }
 
-function cosineSimilarity(left, right) {
-  if (!left || !right || left.length !== right.length) return 0
-  let dot = 0; let leftNorm = 0; let rightNorm = 0
-  for (let i = 0; i < left.length; i += 1) {
-    dot += left[i] * right[i]
-    leftNorm += left[i] * left[i]
-    rightNorm += right[i] * right[i]
-  }
-  return dot / Math.max(1e-8, Math.sqrt(leftNorm * rightNorm))
-}
-
-function speakerScore(embedding) {
-  if (!embedding || !enrollmentEmbeddings.length) return null
-  return Math.max(...enrollmentEmbeddings.map((sample) => cosineSimilarity(embedding, sample)))
-}
-
 function resetEnrollmentCapture() {
   enrollmentMode = false
   enrollmentSamples = []
   lastText = ''
   utterance = []
   recognizer?.reset(stream)
+}
+
+function persistEnrollmentEmbeddings() {
+  const embeddingPath = process.env.SHERPA_SPEAKER_EMBEDDING
+  if (!embeddingPath) return
+  if (!enrollmentEmbeddings.length) {
+    try { fs.unlinkSync(embeddingPath) } catch {}
+    return
+  }
+  fs.mkdirSync(path.dirname(embeddingPath), { recursive: true })
+  fs.writeFileSync(embeddingPath, JSON.stringify(enrollmentEmbeddings.map(vector => Array.from(vector))))
+}
+
+function rebuildSpeakerProfile() {
+  if (!speakerManager) return
+  try { speakerManager.remove('user') } catch {}
+  speakerReady = false
+  if (enrollmentEmbeddings.length) {
+    speakerManager.addMulti({ name: 'user', v: enrollmentEmbeddings })
+    speakerReady = true
+  }
 }
 
 function emit(socket, type, data = {}) {
@@ -123,9 +129,10 @@ function decode(socket) {
     // verification, so evaluate the embedding whenever an utterance ends.
     const embedding = embeddingFromSamples(utterance)
     const threshold = Number(process.env.SHERPA_SPEAKER_THRESHOLD || 0.55)
-    const score = speakerScore(embedding)
+    const match = bestSpeakerMatch(embedding, enrollmentEmbeddings, threshold)
+    const score = match.score
     const canVerify = Boolean(speakerManager && speakerReady && embedding && score !== null)
-    const verified = !requiresSpeaker || (canVerify && speakerManager.verify({ name: 'user', v: embedding, threshold }))
+    const verified = !requiresSpeaker || (canVerify && match.verified)
     if (requiresSpeaker) {
       if (!canVerify) emit(socket, 'speaker_unavailable', { score: null, reason: '语音片段太短或声纹模型尚未就绪' })
       else emit(socket, verified ? 'speaker_verified' : 'speaker_rejected', { score })
@@ -185,11 +192,20 @@ server.on('connection', socket => {
             speakerManager.addMulti({ name: 'user', v: enrollmentEmbeddings })
             speakerReady = true
             resetEnrollmentCapture()
-            if (process.env.SHERPA_SPEAKER_EMBEDDING) { fs.mkdirSync(path.dirname(process.env.SHERPA_SPEAKER_EMBEDDING), { recursive: true }); fs.writeFileSync(process.env.SHERPA_SPEAKER_EMBEDDING, JSON.stringify(enrollmentEmbeddings.map(vector => Array.from(vector)))) }
+            persistEnrollmentEmbeddings()
             emit(socket, 'enrolled')
           }
         }
-        if (command.type === 'clear_speaker') { speakerManager?.remove('user'); enrollmentEmbeddings = []; speakerReady = false; if (process.env.SHERPA_SPEAKER_EMBEDDING) { try { fs.unlinkSync(process.env.SHERPA_SPEAKER_EMBEDDING) } catch {} } emit(socket, 'speaker_cleared') }
+        if (command.type === 'remove_speaker_sample') {
+          const index = Number(command.index)
+          if (!Number.isInteger(index) || index < 0 || index >= enrollmentEmbeddings.length)
+            throw new Error('声纹样本索引无效')
+          enrollmentEmbeddings.splice(index, 1)
+          rebuildSpeakerProfile()
+          persistEnrollmentEmbeddings()
+          emit(socket, 'speaker_sample_removed', { index, remaining: enrollmentEmbeddings.length })
+        }
+        if (command.type === 'clear_speaker') { enrollmentEmbeddings = []; rebuildSpeakerProfile(); persistEnrollmentEmbeddings(); emit(socket, 'speaker_cleared') }
       }
       catch (error) { emit(socket, 'error', { message: `控制消息无效：${error.message}` }) }
       return
