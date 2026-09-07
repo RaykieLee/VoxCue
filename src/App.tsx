@@ -317,6 +317,7 @@ function MainApp() {
   const settingsRef = useRef(settings);
   const speakerVerifiedRef = useRef(false);
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSampleDurationRef = useRef(0);
   const voiceTestModeRef = useRef(false);
   const voiceScoreRef = useRef<number | null>(null);
@@ -688,9 +689,12 @@ function MainApp() {
     return () => {
       remove?.();
       if (voiceTestTimerRef.current) clearTimeout(voiceTestTimerRef.current);
+      if (recordStopTimerRef.current) clearTimeout(recordStopTimerRef.current);
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       streamRef.current?.getTracks().forEach((track) => track.stop());
       processorRef.current?.disconnect();
       audioRef.current?.close();
+      window.desktop?.speech.stop();
     };
   }, [refreshDevices, recordConversation]);
 
@@ -793,6 +797,7 @@ function MainApp() {
 
   const startSample = async () => {
     if (recordingSample) return;
+    let enrollmentStarted = false;
     try {
       if (!streamRef.current) {
         await startListening();
@@ -802,9 +807,11 @@ function MainApp() {
         type: "enroll_start",
       });
       if (!started?.sent) throw new Error("语音服务尚未连接，请稍后重试。");
+      enrollmentStarted = true;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
+      if (recordStopTimerRef.current) clearTimeout(recordStopTimerRef.current);
       recorder.start();
       setRecordingSample(true);
       setRecordSeconds(0);
@@ -814,6 +821,10 @@ function MainApp() {
       );
       const startedAt = Date.now();
       recorder.onstop = () => {
+        if (recordStopTimerRef.current) {
+          clearTimeout(recordStopTimerRef.current);
+          recordStopTimerRef.current = null;
+        }
         stream.getTracks().forEach((track) => track.stop());
         pendingSampleDurationRef.current = Math.max(
           1,
@@ -821,13 +832,16 @@ function MainApp() {
         );
         setRecordingSample(false);
         if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        if (mediaRecorderRef.current === recorder) mediaRecorderRef.current = null;
         window.desktop?.speech.command({ type: "enroll_end" });
       };
-      setTimeout(() => {
+      recordStopTimerRef.current = setTimeout(() => {
+        recordStopTimerRef.current = null;
         if (mediaRecorderRef.current?.state === "recording")
           mediaRecorderRef.current.stop();
       }, 15000);
     } catch {
+      if (enrollmentStarted) window.desktop?.speech.command({ type: "enroll_end" });
       setError("声纹录制需要麦克风权限。");
     }
   };
