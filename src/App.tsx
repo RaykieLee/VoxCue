@@ -547,6 +547,14 @@ function MainApp() {
     }
   }, [settings.microphoneId]);
   useEffect(() => {
+    if (!loaded || page !== "onboarding" || micCheck !== "idle") return;
+    void checkMicrophone();
+  }, [checkMicrophone, loaded, micCheck, page]);
+  const refreshMicrophones = useCallback(async () => {
+    await refreshDevices();
+    setMicCheck("idle");
+  }, [refreshDevices]);
+  useEffect(() => {
     const remove = window.desktop?.speech.onEvent((event) => {
       if (event.type === "speech_start") {
         voiceScoreRef.current = null;
@@ -1158,8 +1166,7 @@ function MainApp() {
                 save({ firstRunComplete: true, onboardingVersion: 2 });
                 setPage("voice");
               }}
-              onMic={checkMicrophone}
-              onRefreshDevices={refreshDevices}
+              onRefreshDevices={refreshMicrophones}
               devices={devices}
               selectedDevice={settings.microphoneId}
               onDevice={(microphoneId) => {
@@ -1541,7 +1548,6 @@ function ModelSetup({
 
 function OnboardingFlow({
   onFinish,
-  onMic,
   onRefreshDevices,
   devices,
   selectedDevice,
@@ -1564,7 +1570,6 @@ function OnboardingFlow({
   onSelectModel,
 }: {
   onFinish: () => void;
-  onMic: () => void;
   onRefreshDevices: () => void;
   devices: MediaDeviceInfo[];
   selectedDevice: string;
@@ -1587,12 +1592,6 @@ function OnboardingFlow({
   onSelectModel: (type: ModelType, id: string) => void;
 }) {
   const [step, setStep] = useState(0);
-  const autoMicCheckStartedRef = useRef(false);
-  useEffect(() => {
-    if (step !== 0 || autoMicCheckStartedRef.current) return;
-    autoMicCheckStartedRef.current = true;
-    onMic();
-  }, [onMic, step]);
   const modelsReady = ["asrModelId", "vadModelId", "speakerModelId"].every((key) => {
     const selected = settings[key as keyof Settings];
     return catalog.some((model) => model.id === selected && model.installed);
@@ -1707,10 +1706,13 @@ function OnboardingFlow({
                 ))}
               </div>
               <button
-                className="secondary-button"
+                className="icon-button mic-refresh-button"
                 onClick={onRefreshDevices}
+                aria-label="刷新麦克风列表并重新检测"
+                title="刷新麦克风列表并重新检测"
+                disabled={micCheck === "checking"}
               >
-                刷新麦克风列表
+                <Icon name="refresh" />
               </button>
             </>
           )}
