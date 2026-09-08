@@ -577,7 +577,15 @@ function MainApp() {
         const score = typeof event.score === "number" ? event.score : null;
         voiceScoreRef.current = score;
         speakerVerifiedRef.current = false;
-        if (!voiceTestModeRef.current) setStatus("listening");
+        if (!voiceTestModeRef.current) {
+          stopListening();
+          setStatus("rejected");
+          setError(
+            score === null
+              ? "声纹验证未通过，录音已停止。"
+              : `声纹验证未通过（${Math.round(score * 100)} 分），录音已停止。`,
+          );
+        }
         if (voiceTestModeRef.current) {
           setVoiceTestScore(score);
           if (voiceTestTimerRef.current)
@@ -600,7 +608,9 @@ function MainApp() {
           setError(event.reason || "语音片段太短，暂时无法完成声纹验证。");
           setTimeout(stopListening, 300);
         } else {
-          setStatus("listening");
+          stopListening();
+          setStatus("rejected");
+          setError(event.reason || "语音片段太短，录音已停止，请重试。");
         }
       }
       if (event.type === "speech_end" && streamRef.current && !voiceTestModeRef.current) {
@@ -610,6 +620,10 @@ function MainApp() {
         if (voiceTestModeRef.current) return;
         const text = event.text || "";
         const cfg = settingsRef.current;
+        // Normal dictation is one utterance per activation. Release the
+        // microphone as soon as the endpoint result arrives; delivery can
+        // continue asynchronously with the captured text.
+        stopListening();
         const sessionCommand = parseSessionCommand(text);
         // Session routing is a privileged action when voice protection is
         // enabled. An unverified speaker must never switch the target chat.
@@ -806,7 +820,9 @@ function MainApp() {
     ],
   );
   const toggleListening = () =>
-    status === "listening" ? stopListening() : startListening();
+    streamRef.current || startInProgressRef.current
+      ? stopListening()
+      : startListening();
 
   const startSample = async () => {
     if (recordingSample) return;
