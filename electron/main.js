@@ -17,6 +17,9 @@ import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { WebSocket } from "ws";
 import composer from "./cdp-composer.cjs";
+import modelArchive from "./model-archive.cjs";
+
+const { extractTarBz2File } = modelArchive;
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -134,8 +137,13 @@ async function downloadModelFile(url, destination) {
   });
 }
 async function extractModelArchive(archive, destination) {
-  const ok = await runAndWait("tar", ["-xjf", archive, "-C", destination]);
-  if (!ok) throw new Error("模型压缩包解压失败，请检查系统是否支持 tar");
+  try {
+    await extractTarBz2File(archive, destination);
+  } catch (error) {
+    throw new Error(
+      `模型压缩包解压失败：${error instanceof Error ? error.message : "压缩包无效"}`,
+    );
+  }
 }
 async function installModel(id) {
   const model = modelRecord(id);

@@ -10,6 +10,7 @@ const sherpa = require('sherpa-onnx-node')
 const fs = require('node:fs')
 const path = require('node:path')
 const { bestSpeakerMatch } = require('./speaker-profile.cjs')
+const { speakerUnavailableReason } = require('./speaker-readiness.cjs')
 
 const port = Number(process.env.SHERPA_PORT || 0)
 const sampleRate = 16000
@@ -134,7 +135,14 @@ function decode(socket) {
     const canVerify = Boolean(speakerManager && speakerReady && embedding && score !== null)
     const verified = !requiresSpeaker || (canVerify && match.verified)
     if (requiresSpeaker) {
-      if (!canVerify) emit(socket, 'speaker_unavailable', { score: null, reason: '语音片段太短或声纹模型尚未就绪' })
+      if (!canVerify) emit(socket, 'speaker_unavailable', {
+        score: null,
+        reason: speakerUnavailableReason({
+          modelReady: Boolean(speakerManager),
+          profileReady: speakerReady,
+          embeddingReady: Boolean(embedding),
+        }),
+      })
       else emit(socket, verified ? 'speaker_verified' : 'speaker_rejected', { score })
     } else if (rawText) {
       emit(socket, 'speaker_verified', { score })

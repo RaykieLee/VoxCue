@@ -212,6 +212,14 @@ button {
   background: #f0efec;
   color: #222;
 }
+.mic-refresh-button {
+  border: 1px solid #d8d7d3;
+  background: #fff;
+}
+.mic-refresh-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 main {
   max-width: 830px;
   padding: 38px 54px 80px;
