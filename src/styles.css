@@ -220,6 +220,22 @@ button {
   opacity: 0.45;
   cursor: not-allowed;
 }
+.microphone-select-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.microphone-select-row select {
+  flex: 1;
+  min-width: 0;
+}
+.microphone-select-row .mic-refresh-button {
+  flex: 0 0 29px;
+}
+.hotwords-input {
+  min-height: 88px;
+  resize: vertical;
+}
 main {
   max-width: 830px;
   padding: 38px 54px 80px;

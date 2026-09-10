@@ -44,10 +44,15 @@ function createEngine() {
   const modelConfig = asrType === 'paraformer'
     ? { paraformer: { encoder, decoder }, tokens, numThreads: Number(process.env.SHERPA_THREADS || 2) }
     : { transducer: { encoder, decoder, joiner: required('SHERPA_ASR_JOINER') }, tokens, numThreads: Number(process.env.SHERPA_THREADS || 2) }
+  const hotwordsFile = asrType === 'paraformer' ? '' : (process.env.SHERPA_HOTWORDS_FILE || '')
   recognizer = new sherpa.OnlineRecognizer({
     featConfig: { sampleRate, featureDim: 80 },
     modelConfig,
-    decodingMethod: 'greedy_search', enableEndpoint: 1,
+    decodingMethod: hotwordsFile ? 'modified_beam_search' : 'greedy_search',
+    maxActivePaths: hotwordsFile ? 4 : 1,
+    hotwordsFile,
+    hotwordsScore: Number(process.env.SHERPA_HOTWORDS_SCORE || 1.5),
+    enableEndpoint: 1,
     rule1MinTrailingSilence: endpointSeconds, rule2MinTrailingSilence: endpointSeconds, rule3MinUtteranceLength: 20
   })
   stream = recognizer.createStream()

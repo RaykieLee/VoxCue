@@ -74,6 +74,8 @@ type Settings = {
   cdpPort: number;
   speakerThreshold: number;
   stopWords: string;
+  hotwords: string;
+  hotwordsScore: number;
   cdpConnected: boolean;
   voiceSamples: { id: number; duration: number }[];
   sendMode: "write" | "send";
@@ -102,6 +104,8 @@ const defaults: Settings = {
   showOrb: true,
   orbSize: 48,
   stopWords: "停止录音",
+  hotwords: "",
+  hotwordsScore: 1.5,
   launchAtLogin: false,
   shortcut: "Alt+Space",
   sessionShortcut: "Alt+Shift+Space",
@@ -559,6 +563,7 @@ function MainApp() {
       if (event.type === "speech_start") {
         voiceScoreRef.current = null;
         speakerVerifiedRef.current = false;
+        setError("");
         setStatus("listening");
       }
       if (event.type === "partial") {
@@ -586,12 +591,11 @@ function MainApp() {
         voiceScoreRef.current = score;
         speakerVerifiedRef.current = false;
         if (!voiceTestModeRef.current) {
-          stopListening();
           setStatus("rejected");
           setError(
             score === null
-              ? "声纹验证未通过，录音已停止。"
-              : `声纹验证未通过（${Math.round(score * 100)} 分），录音已停止。`,
+              ? "声纹验证未通过，仍在继续聆听。"
+              : `声纹验证未通过（${Math.round(score * 100)} 分），仍在继续聆听。`,
           );
         }
         if (voiceTestModeRef.current) {
@@ -616,9 +620,8 @@ function MainApp() {
           setError(event.reason || "语音片段太短，暂时无法完成声纹验证。");
           setTimeout(stopListening, 300);
         } else {
-          stopListening();
           setStatus("rejected");
-          setError(event.reason || "语音片段太短，录音已停止，请重试。");
+          setError(event.reason || "语音片段太短，仍在继续聆听，请重试。");
         }
       }
       if (event.type === "speech_end" && streamRef.current && !voiceTestModeRef.current) {
@@ -628,10 +631,6 @@ function MainApp() {
         if (voiceTestModeRef.current) return;
         const text = event.text || "";
         const cfg = settingsRef.current;
-        // Normal dictation is one utterance per activation. Release the
-        // microphone as soon as the endpoint result arrives; delivery can
-        // continue asynchronously with the captured text.
-        stopListening();
         const sessionCommand = parseSessionCommand(text);
         // Session routing is a privileged action when voice protection is
         // enabled. An unverified speaker must never switch the target chat.
@@ -789,6 +788,8 @@ function MainApp() {
           asrModelId: settings.asrModelId,
           vadModelId: settings.vadModelId,
           speakerModelId: settings.speakerModelId,
+          hotwords: settings.hotwords,
+          hotwordsScore: settings.hotwordsScore,
         });
         if (generation !== listeningGenerationRef.current) return;
         setStatus("listening");
@@ -824,6 +825,8 @@ function MainApp() {
       settings.asrModelId,
       settings.vadModelId,
       settings.speakerModelId,
+      settings.hotwords,
+      settings.hotwordsScore,
       stopListening,
     ],
   );
@@ -1664,9 +1667,10 @@ function OnboardingFlow({
         <div className="onboarding-form">
           {step === 0 && (
             <>
-              <label>
-                选择麦克风
+              <label htmlFor="onboarding-microphone">选择麦克风</label>
+              <div className="microphone-select-row">
                 <select
+                  id="onboarding-microphone"
                   value={selectedDevice}
                   onChange={(event) => onDevice(event.target.value)}
                 >
@@ -1677,7 +1681,16 @@ function OnboardingFlow({
                     </option>
                   ))}
                 </select>
-              </label>
+                <button
+                  className="icon-button mic-refresh-button"
+                  onClick={onRefreshDevices}
+                  aria-label="刷新麦克风列表并重新检测"
+                  title="刷新麦克风列表并重新检测"
+                  disabled={micCheck === "checking"}
+                >
+                  <Icon name="refresh" />
+                </button>
+              </div>
               <p className={`hint mic-result ${micCheck}`}>
                 {micCheck === "checking"
                   ? "正在检测，请对着麦克风说话…"
@@ -1705,15 +1718,6 @@ function OnboardingFlow({
                   />
                 ))}
               </div>
-              <button
-                className="icon-button mic-refresh-button"
-                onClick={onRefreshDevices}
-                aria-label="刷新麦克风列表并重新检测"
-                title="刷新麦克风列表并重新检测"
-                disabled={micCheck === "checking"}
-              >
-                <Icon name="refresh" />
-              </button>
             </>
           )}
           {step === 1 && (
@@ -2625,6 +2629,35 @@ function SettingsPage({
           value={settings.punctuation}
           onChange={(value) => onSetting({ punctuation: value })}
         />
+        <div className="setting-row">
+          <div>
+            <strong>识别热词</strong>
+            <p>提升名称和专业词的识别概率；每行一个，仅 Zipformer 模型支持。</p>
+          </div>
+          <textarea
+            className="setting-input hotwords-input"
+            value={settings.hotwords}
+            placeholder={"例如：\nVoxCue\n多模态"}
+            onChange={(event) => onSetting({ hotwords: event.target.value })}
+          />
+        </div>
+        <div className="setting-row">
+          <div>
+            <strong>热词权重</strong>
+            <p>数值越高越容易命中，过高可能造成误识别。</p>
+          </div>
+          <div className="interval-control">
+            <input
+              type="range"
+              min="0.5"
+              max="3"
+              step="0.1"
+              value={settings.hotwordsScore}
+              onChange={(event) => onSetting({ hotwordsScore: Number(event.target.value) })}
+            />
+            <output>{settings.hotwordsScore.toFixed(1)}</output>
+          </div>
+        </div>
       </section>
       <section className="section-card">
         <h2>快捷键</h2>

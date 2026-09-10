@@ -68,6 +68,8 @@ const defaultSettings = {
   showOrb: true,
   orbSize: 48,
   stopWords: "停止录音",
+  hotwords: "",
+  hotwordsScore: 1.5,
   launchAtLogin: false,
   shortcut: "Alt+Space",
   sessionShortcut: "Alt+Shift+Space",
@@ -508,6 +510,14 @@ async function startSpeech(options = {}) {
   const punctuationRelative = path.join("sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8", "model.int8.onnx");
   const punctuationBase = modelRoots().find((base) => fs.existsSync(path.join(base, punctuationRelative))) || modelRoot;
   const asrDir = asr.directory ? path.join(asrBase, asr.directory) : asrBase;
+  const hotwords = String(options.hotwords ?? configured.hotwords ?? "").trim();
+  const supportsHotwords = (asr.architecture || "zipformer") !== "paraformer";
+  const hotwordsPath = path.join(app.getPath("userData"), "hotwords.txt");
+  if (supportsHotwords && hotwords) {
+    const lines = hotwords.split(/[\n,，]+/).map((item) => item.trim()).filter(Boolean);
+    const encoded = lines.map((item) => Array.from(item.replace(/\s+/g, "")).join(" ")).join("\n");
+    fs.writeFileSync(hotwordsPath, `${encoded}\n`, "utf8");
+  }
   const defaultModels = {
     SHERPA_ASR_TYPE: asr.architecture || "zipformer",
     SHERPA_ASR_ENCODER: path.join(asrDir, asr.files?.find((file) => file.startsWith("encoder")) || "encoder.int8.onnx"),
@@ -536,6 +546,10 @@ async function startSpeech(options = {}) {
         SHERPA_SPEAKER_THRESHOLD: String(options.speakerThreshold ?? 0.55),
         SHERPA_ENDPOINT_SECONDS: String(
           Math.max(0.5, Math.min(3, Number(options.endpointSeconds) || 1.2)),
+        ),
+        SHERPA_HOTWORDS_FILE: supportsHotwords && hotwords ? hotwordsPath : "",
+        SHERPA_HOTWORDS_SCORE: String(
+          Math.max(0.5, Math.min(3, Number(options.hotwordsScore ?? configured.hotwordsScore) || 1.5)),
         ),
         ...defaultModels,
         ...options.models,

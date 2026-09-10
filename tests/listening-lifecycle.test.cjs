@@ -12,13 +12,14 @@ test('an active microphone stream is always stopped by the toggle action', () =>
   )
 })
 
-test('terminal recognition events stop the microphone session', () => {
+test('dictation remains active across terminal recognition events', () => {
   const finalHandler = appSource.match(/if \(event\.type === "final"\) \{([\s\S]*?)if \(event\.type === "enrolled"\)/)?.[1] || ''
-  assert.match(finalHandler, /stopListening\(\)/)
+  assert.doesNotMatch(finalHandler, /one utterance per activation/)
 
   const rejectedHandler = appSource.match(/if \(event\.type === "speaker_rejected"\) \{([\s\S]*?)if \(event\.type === "speaker_unavailable"\)/)?.[1] || ''
-  assert.match(rejectedHandler, /stopListening\(\)/)
+  const normalRejected = rejectedHandler.match(/if \(!voiceTestModeRef\.current\) \{([\s\S]*?)\n        \}/)?.[1] || ''
+  assert.doesNotMatch(normalRejected, /stopListening\(\)/)
 
   const unavailableHandler = appSource.match(/if \(event\.type === "speaker_unavailable"\) \{([\s\S]*?)if \(event\.type === "speech_end"/)?.[1] || ''
-  assert.match(unavailableHandler, /stopListening\(\)/)
+  assert.doesNotMatch(unavailableHandler, /录音已停止/)
 })
