@@ -1,6 +1,6 @@
 {
   "name": "voice-input-desktop",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "description": "Local voice input assistant for desktop ChatGPT",
   "author": "VoxCue",
